@@ -1,6 +1,8 @@
 package com.bradleywilcox.doodlepad;
 
 import android.Manifest;
+import android.content.DialogInterface;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -8,11 +10,13 @@ import android.os.Build;
 import android.provider.ContactsContract;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.content.PermissionChecker;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.support.v7.widget.PopupMenu;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -31,6 +35,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import static com.bradleywilcox.doodlepad.R.id.btnBgC1;
+import static com.bradleywilcox.doodlepad.R.id.textViewcolor3;
 import static com.bradleywilcox.doodlepad.R.id.txtViewpop2;
 
 
@@ -47,15 +52,17 @@ import static com.bradleywilcox.doodlepad.R.id.txtViewpop2;
  * 2.  Save Feature, the save button will save the current drawing into the phones
  * gallery.  Found in the class 'Image'.  Also required requestPermissions found in this class for sdk >= 23
  *
- *
  * 3.  Undo Feature, the undo button will undo the users most recent actions, one at a time, much like the common 'ctrl-z',
  * most of the code for this feature is found in the class 'BitmapManager' and is used throughout the 'Drawing' class
  *
+ * 4.  Eraser Tool, found in the 'EraserTool' class
  *
- * 4.  Eraser Tool, Background Colors, CircleTool, Rounded Rectangle Tool
+ * 5.  Background Colors, CircleTool, Rounded Rectangle Tool, rgb colors
+ *
  */
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
+    private static String prefName = "DoodlePrefs";
 
     private ImageButton btnLineTool, btnRectTool, btnBrushTool, btnSave, btnErase, btnUndo, btnRoundRect, btnCircle, btnNewFile, btnInfo;
     private SeekBar sbStrokeWidth;
@@ -186,11 +193,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } else if(view == btnUndo){
             drawingView.performUndo();
         } else if(view == btnNewFile){
-            txtViewColor3.setText("Line");
-            setVal = Color.RED;
-            bgVal = Color.WHITE;
-            setPopVal(setVal, bgVal);
-            drawingView.reset();
+            newFileDialog();
         } else if(view == btnInfo){
             showInfo(view);
         }
@@ -495,14 +498,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         if(xx.equals("")||yy.equals("")||zz.equals(""))
         {
-            btnSubmitAdv.setClickable(false);
+            return;
         }else {
             ed1 = Integer.parseInt(red.getText().toString());
             ed2 = Integer.parseInt(green.getText().toString());
             ed3 = Integer.parseInt(blue.getText().toString());
 
             if (ed1 < 0 || ed1 > 255 || ed2 < 0 || ed2 > 255 || ed3 < 0 || ed3 > 255) {
-                btnSubmitAdv.setClickable(false);
+                return;
             }
 
             mixColors(ed1, ed2, ed3);
@@ -545,6 +548,32 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
+    public void newFileDialog(){
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this);
+        dialog.setTitle("New Doodle");
+        dialog.setMessage("Are you sure you want to start a new doodle?");
+        dialog.setPositiveButton("Yes", new DialogInterface.OnClickListener(){
+            public void onClick(DialogInterface dialog, int which){
+                txtViewColor3.setText("Line");
+                setVal = Color.RED;
+                bgVal = Color.WHITE;
+                setPopVal(setVal, bgVal);
+                drawingView.reset();
+                dialog.dismiss();
+
+                fullScreen();
+            }
+        });
+        dialog.setNegativeButton("Cancel", new DialogInterface.OnClickListener(){
+            public void onClick(DialogInterface dialog, int which){
+                dialog.cancel();
+
+                fullScreen();
+            }
+        });
+        dialog.show();
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
         switch (requestCode) {
@@ -563,8 +592,26 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onResume(){
         super.onResume();
-
         fullScreen();
+
+        SharedPreferences settings = getSharedPreferences(prefName, MODE_PRIVATE);
+        int color = settings.getInt("color", -99);
+        int bgColor = settings.getInt("bgColor", -99);
+        int tool = settings.getInt("tool", -99);
+        String toolName = settings.getString("toolName", "");
+        int stroke = settings.getInt("stroke", -99);
+
+        if(color != -99 && bgColor != -99){
+            txtViewColor3.setText(toolName);
+            setVal = color;
+            bgVal = bgColor;
+            setPopVal(color, bgColor);
+            drawingView.setTool(Drawing.Tools.values()[tool]);
+            if(Drawing.Tools.values()[tool] == Drawing.Tools.eraser)
+                setEraser(bgColor);
+            sbStrokeWidth.setProgress(stroke);
+            drawingView.setStrokeWidth(stroke);
+        }
     }
 
     private void fullScreen(){
@@ -575,6 +622,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | View.SYSTEM_UI_FLAG_FULLSCREEN
                         | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+    }
+
+    @Override
+    public void onPause(){
+        super.onPause();
+
+        SharedPreferences settings = getSharedPreferences(prefName, MODE_PRIVATE);
+        SharedPreferences.Editor editor = settings.edit();
+        editor.putInt("color", setVal);
+        editor.putInt("bgColor", bgVal);
+        editor.putString("toolName", txtViewColor3.getText().toString());
+        editor.putInt("tool", drawingView.getTool().ordinal());
+        editor.putInt("stroke", sbStrokeWidth.getProgress());
+        editor.commit();
+
+        BitmapManager.saveNewest(drawingView.getNewestBitmap(), getApplicationContext());
     }
 
 
